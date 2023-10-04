@@ -25,31 +25,13 @@ class UpdateQueueMonitorTable extends Migration
 
     public function upgradeColumns()
     {
-        Monitor::query()->chunk(500, function (Collection $monitors) {
-            /** @var array<int, array<\romanzipp\QueueMonitor\Models\Monitor>> $matrix */
-            $matrix = [
-                MonitorStatus::RUNNING => [],
-                MonitorStatus::FAILED => [],
-                MonitorStatus::SUCCEEDED => [],
-            ];
-
-            foreach ($monitors as $monitor) {
-                /** @phpstan-ignore-next-line */
-                if ($monitor->failed) {
-                    $matrix[MonitorStatus::FAILED][] = $monitor;
-                } elseif (null !== $monitor->finished_at) {
-                    $matrix[MonitorStatus::SUCCEEDED][] = $monitor;
-                } else {
-                    $matrix[MonitorStatus::RUNNING][] = $monitor;
-                }
-            }
-
-            foreach ($matrix as $status => $monitors) {
-                DB::table(config('queue-monitor.table'))
-                    ->whereIn('id', array_map(fn (Monitor $monitor) => $monitor->id, $monitors))
-                    ->update(['status' => $status]);
-            }
-        });
+        DB::table(config('queue-monitor.table'))->update([
+            'status' => DB::raw('CASE ' .
+                'WHEN finished_at IS NOT NULL THEN ' . MonitorStatus::SUCCEEDED . ' ' .
+                'WHEN failed = 1 THEN ' . MonitorStatus::FAILED . ' ' .
+                'ELSE ' . MonitorStatus::RUNNING . ' ' .
+                'END'),
+        ]);
     }
 
     public function down()
